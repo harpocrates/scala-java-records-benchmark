@@ -37,6 +37,32 @@ class Bench {
     126, "hello bar", 50L
   )
 
+  val scala1M = new SmallScalaModified(123, "hello world", 45L)
+  val scala2M = new SmallScalaModified(123, "hello world", 45L)
+  val scala3M = new SmallScalaModified(123, "hello world", 49L)
+
+  val scala4M = new LargeScalaModified[SmallScalaModified](
+    123, "hello world", 45L,
+    scala1M, scala2M,
+    124, "hello foo", 46L,
+    125, "hello baz", 48L,
+    126, "hello bar", 49L
+  )
+  val scala5M = new LargeScalaModified[SmallScalaModified](
+    123, "hello world", 45L,
+    scala2M, scala1M,
+    124, "hello foo", 46L,
+    125, "hello baz", 48L,
+    126, "hello bar", 49L
+  )
+  val scala6M = new LargeScalaModified[SmallScalaModified](
+    123, "hello world", 45L,
+    scala2M, scala1M,
+    124, "hello foo", 46L,
+    125, "hello baz", 48L,
+    126, "hello bar", 50L
+  )
+
   val java1 = new SmallJava(123, "hello world", 45L)
   val java2 = new SmallJava(123, "hello world", 45L)
   val java3 = new SmallJava(123, "hello world", 49L)
@@ -63,9 +89,14 @@ class Bench {
     126, "hello bar", 50L
   )
 
+
   @Benchmark
   def smallScalaEqualityTest(): Boolean =
     scala1 == scala2
+
+  @Benchmark
+  def smallScalaModifiedEqualityTest(): Boolean =
+    scala1M == scala2M
 
   @Benchmark
   def smallJavaEqualityTest(): Boolean =
@@ -74,6 +105,10 @@ class Bench {
   @Benchmark
   def smallScalaInequalityTest(): Boolean =
     scala1 == scala3
+
+  @Benchmark
+  def smallScalaModifiedInequalityTest(): Boolean =
+    scala1M == scala3M
 
   @Benchmark
   def smallJavaInequalityTest(): Boolean =
@@ -85,12 +120,20 @@ class Bench {
     scala4 == scala5
 
   @Benchmark
+  def largeScalaModifiedEqualityTest(): Boolean =
+    scala4M == scala5M
+
+  @Benchmark
   def largeJavaEqualityTest(): Boolean =
     java4 == java5
 
   @Benchmark
   def largeScalaInequalityTest(): Boolean =
     scala4 == scala6
+
+  @Benchmark
+  def largeScalaModifiedInequalityTest(): Boolean =
+    scala4M == scala6M
 
   @Benchmark
   def largeJavaInequalityTest(): Boolean =
