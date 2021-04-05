@@ -8,4 +8,6 @@ final case class SmallScalaModified(
   l: Long
 ) {
   override def equals(other: Any): Boolean = Macros.equals(this, other)
+  override def hashCode: Int = Macros.hashCode(this)
+  override def productElement(i: Int): AnyRef = Macros.productElement(this, i)
 }

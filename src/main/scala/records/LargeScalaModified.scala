@@ -1,5 +1,10 @@
 package records
 
+class Foo {
+  def bar() = 89
+}
+
+
 final case class LargeScalaModified[T](
   i: Int,
   s: String,
@@ -15,6 +20,8 @@ final case class LargeScalaModified[T](
   i4: Int,
   s4: String,
   l4: Long
-) {
+) extends Foo {
   override def equals(other: Any): Boolean = Macros.equals(this, other)
+  override def hashCode: Int = Macros.hashCode(this)
+  override def productElement(i: Int): AnyRef = Macros.productElement(this, i)
 }

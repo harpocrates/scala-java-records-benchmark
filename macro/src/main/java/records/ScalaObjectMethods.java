@@ -16,9 +16,13 @@ public final class ScalaObjectMethods {
 
     private static final MethodHandle FALSE = MethodHandles.constant(boolean.class, false);
     private static final MethodHandle TRUE = MethodHandles.constant(boolean.class, true);
+    private static final MethodHandle HASH_INIT = MethodHandles.constant(int.class, 0xcafebabe);
     private static final MethodHandle CLASS_IS_INSTANCE;
     private static final MethodHandle OBJECTS_EQUALS;
     private static final MethodHandle OBJECT_EQ;
+    private static final MethodHandle HASH_ANY;
+    private static final MethodHandle HASH_COMBINER;
+    private static final MethodHandle HASH_FINALIZER;
 
     private static boolean eq(Object a, Object b) { return a == b; }
     private static boolean eq(byte a, byte b) { return a == b; }
@@ -31,6 +35,7 @@ public final class ScalaObjectMethods {
     private static boolean eq(boolean a, boolean b) { return a == b; }
 
     private static final HashMap<Class<?>, MethodHandle> equalHandles = new HashMap<>();
+    private static final HashMap<Class<?>, MethodHandle> hashHandles = new HashMap<>();
 
     static {
         try {
@@ -52,6 +57,21 @@ public final class ScalaObjectMethods {
                 ScalaObjectMethods.class,
                 "eq",
                 MethodType.methodType(boolean.class, Object.class, Object.class)
+            );
+            HASH_ANY = lookup.findStatic(
+                scala.runtime.Statics.class,
+                "anyHash",
+                MethodType.methodType(int.class, Object.class)
+            );
+            HASH_COMBINER = lookup.findStatic(
+                scala.runtime.Statics.class,
+                "mix",
+                MethodType.methodType(int.class, int.class, int.class)
+            );
+            HASH_FINALIZER = lookup.findStatic(
+                scala.runtime.Statics.class,
+                "finalizeHash",
+                MethodType.methodType(int.class, int.class, int.class)
             );
 
             // Populate types for which there is a concrete equality method
@@ -127,6 +147,73 @@ public final class ScalaObjectMethods {
                     MethodType.methodType(boolean.class, Object.class, Object.class)
                 )
             );
+
+            // Populate types for hashing
+            hashHandles.put(
+                scala.Unit.class,
+                MethodHandles.constant(int.class, 0)
+            );
+            hashHandles.put(
+                scala.runtime.Null$.class,
+                MethodHandles.constant(int.class, 0)
+            );
+            hashHandles.put(
+                boolean.class,
+                MethodHandles.guardWithTest(
+                    MethodHandles.identity(boolean.class),
+                    MethodHandles.dropArguments(MethodHandles.constant(int.class, 1231), 0, boolean.class),
+                    MethodHandles.dropArguments(MethodHandles.constant(int.class, 1237), 0, boolean.class)
+                )
+            );
+            hashHandles.put(
+                int.class,
+                MethodHandles.identity(int.class)
+            );
+            hashHandles.put(
+                short.class,
+                MethodHandles.explicitCastArguments(
+                    MethodHandles.identity(int.class),
+                    MethodType.fromMethodDescriptorString("(S)I", loader)
+                )
+            );
+            hashHandles.put(
+                byte.class,
+                MethodHandles.explicitCastArguments(
+                    MethodHandles.identity(int.class),
+                    MethodType.fromMethodDescriptorString("(B)I", loader)
+                )
+            );
+            hashHandles.put(
+                char.class,
+                MethodHandles.explicitCastArguments(
+                    MethodHandles.identity(int.class),
+                    MethodType.fromMethodDescriptorString("(C)I", loader)
+                )
+            );
+            hashHandles.put(
+                long.class,
+                lookup.findStatic(
+                    scala.runtime.Statics.class,
+                    "longHash",
+                    MethodType.methodType(int.class, long.class)
+                )
+            );
+            hashHandles.put(
+                double.class,
+                lookup.findStatic(
+                    scala.runtime.Statics.class,
+                    "doubleHash",
+                    MethodType.methodType(int.class, double.class)
+                )
+            );
+            hashHandles.put(
+                float.class,
+                lookup.findStatic(
+                    scala.runtime.Statics.class,
+                    "floatHash",
+                    MethodType.methodType(int.class, float.class)
+                )
+            );
         }
         catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
@@ -176,6 +263,49 @@ public final class ScalaObjectMethods {
         );
     }
 
+    private static MethodHandle hasher(Class<?> clazz) {
+        MethodHandle hasher = hashHandles.get(clazz);
+        return (hasher != null)
+            ? hasher
+            : HASH_ANY.asType(MethodType.methodType(int.class, clazz));
+    }
+
+    private static MethodHandle makeHashCode(Class<?> receiverClass, List<MethodHandle> getters) {
+        MethodHandle accumulator = MethodHandles.dropArguments(HASH_INIT, 0, receiverClass); // (R)I
+
+        for (MethodHandle getter : getters) {
+            MethodHandle hasher = hasher(getter.type().returnType()); // (T)I
+            MethodHandle hashThisField = MethodHandles.filterArguments(hasher, 0, getter);    // (R)I
+            MethodHandle combineHashes = MethodHandles.filterArguments(HASH_COMBINER, 0, accumulator, hashThisField); // (RR)I
+            accumulator = MethodHandles.permuteArguments(combineHashes, accumulator.type(), 0, 0); // adapt (R)I to (RR)I
+        }
+
+        return MethodHandles.filterArguments(
+          MethodHandles.insertArguments(HASH_FINALIZER, 1, getters.size()),
+          0,
+          accumulator
+        );
+    }
+
+    private static MethodHandle makeProductElement(Class<?> receiverClass, List<MethodHandle> getters) {
+        MethodHandle[] boxedGetters = getters
+            .stream()
+            .map(getter -> getter.asType(getter.type().changeReturnType(java.lang.Object.class)))
+            .toArray(MethodHandle[]::new);
+
+        MethodHandle getGetter = MethodHandles      // (I)H
+            .arrayElementGetter(MethodHandle[].class)
+            .bindTo(boxedGetters);
+        MethodHandle invokeGetter = MethodHandles.permuteArguments( // (RH)O
+            MethodHandles.invoker(MethodType.methodType(java.lang.Object.class, receiverClass)),
+            MethodType.methodType(java.lang.Object.class, receiverClass, MethodHandle.class),
+            1,
+            0
+        );
+
+        return MethodHandles.filterArguments(invokeGetter, 1, getGetter);
+    }
+
     public static ConstantCallSite bootstrap(
         MethodHandles.Lookup lookup,
         String methodName,
@@ -189,11 +319,15 @@ public final class ScalaObjectMethods {
                 if (methodType != null && !methodType.equals(MethodType.methodType(boolean.class, caseClass, Object.class)))
                     throw new IllegalArgumentException("Bad method type: " + methodType);
                 return new ConstantCallSite(makeEquals(caseClass, getterList));
-        //    case "hashCode":
-        //        if (methodType != null && !methodType.equals(MethodType.methodType(int.class, recordClass)))
-        //            throw new IllegalArgumentException("Bad method type: " + methodType);
-        //        handle = makeHashCode(recordClass, getterList);
-        //        return methodType != null ? new ConstantCallSite(handle) : handle;
+            case "hashCode":
+                if (methodType != null && !methodType.equals(MethodType.methodType(int.class, caseClass)))
+                    throw new IllegalArgumentException("Bad method type: " + methodType);
+                return new ConstantCallSite(makeHashCode(caseClass, getterList));
+            case "productElement":
+                if (methodType != null && !methodType.equals(MethodType.methodType(Object.class, caseClass, int.class)))
+                    throw new IllegalArgumentException("Bad method type: " + methodType);
+                return new ConstantCallSite(makeProductElement(caseClass, getterList));
+
         //    case "toString":
         //        if (methodType != null && !methodType.equals(MethodType.methodType(String.class, recordClass)))
         //            throw new IllegalArgumentException("Bad method type: " + methodType);

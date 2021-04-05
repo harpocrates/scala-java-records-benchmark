@@ -89,6 +89,18 @@ class Bench {
     126, "hello bar", 50L
   )
 
+  assert(scala1 == scala2)
+  assert(scala1M == scala2M)
+  assert(java1 == java2)
+
+  assert(scala1.hashCode == scala1M.hashCode)
+  assert(scala2.hashCode == scala2M.hashCode)
+  assert(scala3.hashCode == scala3M.hashCode)
+  assert(scala4.hashCode == scala4M.hashCode)
+  assert(scala5.hashCode == scala5M.hashCode)
+  assert(scala6.hashCode == scala6M.hashCode)
+
+  // equals
 
   @Benchmark
   def smallScalaEqualityTest(): Boolean =
@@ -138,5 +150,49 @@ class Bench {
   @Benchmark
   def largeJavaInequalityTest(): Boolean =
     java4 == java6
+
+  // hashCode
+
+  @Benchmark
+  def smallScalaHashCode(): Int =
+    scala1.hashCode
+
+  @Benchmark
+  def smallScalaModifiedHashCode(): Int =
+    scala1M.hashCode
+
+  @Benchmark
+  def smallJavaHashCode(): Int =
+    java1.hashCode
+
+  @Benchmark
+  def largeScalaHashCode(): Int =
+    scala4.hashCode
+
+  @Benchmark
+  def largeScalaModifiedHashCode(): Int =
+    scala4M.hashCode
+
+  @Benchmark
+  def largeJavaHashCode(): Int =
+    java4.hashCode
+
+  // productElement
+
+  @Benchmark
+  def smallScalaProductElement(): Any =
+    scala1.productElement(1)
+
+  @Benchmark
+  def smallScalaModifiedProductElement(): Any =
+    scala1M.productElement(1)
+
+  @Benchmark
+  def largeScalaProductElement(): Any =
+    scala4.productElement(8)
+
+  @Benchmark
+  def largeScalaModifiedProductElement(): Any =
+    scala4M.productElement(8)
 }
 
