@@ -151,6 +151,7 @@ class Bench {
   def largeJavaInequalityTest(): Boolean =
     java4 == java6
 
+/*
   // hashCode
 
   @Benchmark
@@ -176,7 +177,6 @@ class Bench {
   @Benchmark
   def largeJavaHashCode(): Int =
     java4.hashCode
-
   // productElement
 
   @Benchmark
@@ -194,5 +194,6 @@ class Bench {
   @Benchmark
   def largeScalaModifiedProductElement(): Any =
     scala4M.productElement(8)
+*/
 }
 

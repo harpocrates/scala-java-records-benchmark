@@ -23,6 +23,8 @@ public final class ScalaObjectMethods {
     private static final MethodHandle HASH_ANY;
     private static final MethodHandle HASH_COMBINER;
     private static final MethodHandle HASH_FINALIZER;
+    private static final MethodHandle INDEX_EXCEPTION_MAKER;
+    private static final MethodHandle INDEX_EQ;
 
     private static boolean eq(Object a, Object b) { return a == b; }
     private static boolean eq(byte a, byte b) { return a == b; }
@@ -33,6 +35,9 @@ public final class ScalaObjectMethods {
     private static boolean eq(float a, float b) { return Float.compare(a, b) == 0; }
     private static boolean eq(double a, double b) { return Double.compare(a, b) == 0; }
     private static boolean eq(boolean a, boolean b) { return a == b; }
+    private static IndexOutOfBoundsException oob(int i) {
+        return new IndexOutOfBoundsException(Integer.toString(i));
+    }
 
     private static final HashMap<Class<?>, MethodHandle> equalHandles = new HashMap<>();
     private static final HashMap<Class<?>, MethodHandle> hashHandles = new HashMap<>();
@@ -72,6 +77,16 @@ public final class ScalaObjectMethods {
                 scala.runtime.Statics.class,
                 "finalizeHash",
                 MethodType.methodType(int.class, int.class, int.class)
+            );
+            INDEX_EXCEPTION_MAKER = lookup.findStatic(
+                ScalaObjectMethods.class,
+                "oob",
+                MethodType.methodType(IndexOutOfBoundsException.class, int.class)
+            );
+            INDEX_EQ = lookup.findStatic(
+                ScalaObjectMethods.class,
+                "eq",
+                MethodType.methodType(boolean.class, int.class, int.class)
             );
 
             // Populate types for which there is a concrete equality method
@@ -297,13 +312,38 @@ public final class ScalaObjectMethods {
             .arrayElementGetter(MethodHandle[].class)
             .bindTo(boxedGetters);
         MethodHandle invokeGetter = MethodHandles.permuteArguments( // (RH)O
-            MethodHandles.invoker(MethodType.methodType(java.lang.Object.class, receiverClass)),
+            MethodHandles.exactInvoker(MethodType.methodType(java.lang.Object.class, receiverClass)),
             MethodType.methodType(java.lang.Object.class, receiverClass, MethodHandle.class),
             1,
             0
         );
 
         return MethodHandles.filterArguments(invokeGetter, 1, getGetter);
+    }
+
+    private static MethodHandle makeProductElementChained(Class<?> receiverClass, MethodHandle[] getters) {
+        MethodHandle accumulator = MethodHandles.filterReturnValue(  // (IR)O
+            MethodHandles.dropArguments(INDEX_EXCEPTION_MAKER, 1, receiverClass),
+            MethodHandles.throwException(Object.class, IndexOutOfBoundsException.class)
+        );
+
+        for (int i = getters.length - 1; i >= 0; i--) {
+            MethodHandle getter = getters[i];
+            MethodHandle boxedGetter = getter.asType(getter.type().changeReturnType(java.lang.Object.class)); // (R)O
+
+            accumulator = MethodHandles.guardWithTest(
+                MethodHandles.insertArguments(INDEX_EQ, 0, i),            // (I)Z
+                MethodHandles.dropArguments(boxedGetter, 0, int.class),   // (IR)O
+                accumulator                                               // (IR)O
+            );
+        }
+
+        return MethodHandles.permuteArguments(
+            accumulator,
+            MethodType.methodType(java.lang.Object.class, receiverClass, int.class),
+            1,
+            0
+        );
     }
 
     public static ConstantCallSite bootstrap(

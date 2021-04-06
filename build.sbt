@@ -2,6 +2,9 @@ ThisBuild / scalaVersion     := "2.12.14-bin-indy1-SNAPSHOT"
 ThisBuild / version          := "0.1.0-SNAPSHOT"
 ThisBuild / organization     := "com.example"
 ThisBuild / organizationName := "records"
+// ThisBuild / javaOptions      += "-XX:CompileCommand=print,records.LargeScala::*"
+// Compile / run / fork        := true
+
 
 lazy val scalaReflect = Def.setting { "org.scala-lang" % "scala-reflect" % scalaVersion.value }
 
