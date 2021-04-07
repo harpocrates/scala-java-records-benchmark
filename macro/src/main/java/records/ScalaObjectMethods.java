@@ -278,6 +278,8 @@ public final class ScalaObjectMethods {
         );
     }
 
+    /** Make a method handle that corresponds to the semantics of `hashCode` on a `case class`.
+      */
     private static MethodHandle hasher(Class<?> clazz) {
         MethodHandle hasher = hashHandles.get(clazz);
         return (hasher != null)
@@ -302,6 +304,12 @@ public final class ScalaObjectMethods {
         );
     }
 
+    /** Make a method handle that corresponds to the semantics of `productElement` on a `case class`.
+      *
+      * The approach taken is to build an array of the getters and then index into that. This is
+      * constant time (since array inddexing is O(1)), but still not as efficient as a manually
+      * created `tableswitch`.
+      */
     private static MethodHandle makeProductElement(Class<?> receiverClass, List<MethodHandle> getters) {
         MethodHandle[] boxedGetters = getters
             .stream()
@@ -321,6 +329,12 @@ public final class ScalaObjectMethods {
         return MethodHandles.filterArguments(invokeGetter, 1, getGetter);
     }
 
+    /** Make a method handle that corresponds to the semantics of `productElement` on a `case class`.
+      *
+      * The approach taken is to build a chain of `if`/`else if`/`else` checks on the index. This
+      * is O(n) in the worst case, but I was curious how well it would JIT. Answer: not as well as
+      * `tableswitch`
+      */
     private static MethodHandle makeProductElementChained(Class<?> receiverClass, MethodHandle[] getters) {
         MethodHandle accumulator = MethodHandles.filterReturnValue(  // (IR)O
             MethodHandles.dropArguments(INDEX_EXCEPTION_MAKER, 1, receiverClass),
@@ -355,18 +369,35 @@ public final class ScalaObjectMethods {
     ) throws Throwable {
         List<MethodHandle> getterList = Arrays.asList(getters);
         switch (methodName) {
+            // instance methods
             case "equals":
                 if (methodType != null && !methodType.equals(MethodType.methodType(boolean.class, caseClass, Object.class)))
                     throw new IllegalArgumentException("Bad method type: " + methodType);
                 return new ConstantCallSite(makeEquals(caseClass, getterList));
+
             case "hashCode":
                 if (methodType != null && !methodType.equals(MethodType.methodType(int.class, caseClass)))
                     throw new IllegalArgumentException("Bad method type: " + methodType);
                 return new ConstantCallSite(makeHashCode(caseClass, getterList));
+
             case "productElement":
                 if (methodType != null && !methodType.equals(MethodType.methodType(Object.class, caseClass, int.class)))
                     throw new IllegalArgumentException("Bad method type: " + methodType);
                 return new ConstantCallSite(makeProductElement(caseClass, getterList));
+
+            // static methods
+            case "apply":
+                Class<?>[] parameterTypes = Arrays
+                    .stream(getters)
+                    .map(getter -> getter.type().returnType())
+                    .toArray(Class<?>[]::new);
+                MethodType applyType = MethodType.methodType(caseClass, parameterTypes);
+                if (methodType != null && !methodType.equals(applyType))
+                    throw new IllegalArgumentException("Bad method type: " + methodType);
+
+                MethodHandle ctor = lookup.findConstructor(caseClass, applyType);
+                return new ConstantCallSite(ctor);
+
 
         //    case "toString":
         //        if (methodType != null && !methodType.equals(MethodType.methodType(String.class, recordClass)))
